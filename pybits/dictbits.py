@@ -3,6 +3,55 @@ from fnmatch import fnmatch
 from typing import Dict, List, Any, Optional
 
 
+def pick_list(
+    items: List[Any],
+    include: Optional[List[str]] = None,
+    exclude: Optional[List[str]] = None,
+    childrens_attribute_name: str = "children",
+    recursive: bool = True,
+    depth: int = -1,
+    path: str = "*",
+    path_attribute_name: str = "",
+) -> List[Any]:
+    result: List[Any] = []
+
+    for item in items:
+        if isinstance(item, dict):
+            item_dict: Dict[str, Any] = item
+
+            result.append(
+                pick(
+                    item_dict,
+                    include,
+                    exclude,
+                    childrens_attribute_name,
+                    recursive,
+                    depth,
+                    path,
+                    path_attribute_name,
+                )
+            )
+        elif isinstance(item, list):
+            item_list: List[Any] = item
+
+            result.append(
+                pick_list(
+                    item_list,
+                    include,
+                    exclude,
+                    childrens_attribute_name,
+                    recursive,
+                    depth,
+                    path,
+                    path_attribute_name,
+                )
+            )
+        elif isinstance(item, (str, int, float)):
+            result.append(item)
+
+    return result
+
+
 def pick(
     item: Dict[str, Any],
     include: Optional[List[str]] = None,
@@ -28,6 +77,17 @@ def pick(
 
     result: Dict[str, Any] = {}
 
+    # remove excluded attributes
+    for attribute_name in exclude:
+        matches = [fnmatch(x, attribute_name) for x in include]
+
+        # print(include, attribute_name)
+
+        if any(matches):
+            match_index = matches.index(True)
+
+            include.remove(include[match_index])
+
     # add included attributes
     for attribute_name in include:
         matches = [fnmatch(x, attribute_name) for x in item_keys]
@@ -36,17 +96,37 @@ def pick(
             match_index = matches.index(True)
             matched_attribute_name = item_keys[match_index]
 
-            result[matched_attribute_name] = item[matched_attribute_name]
+            value = item[matched_attribute_name]
 
-    # remove excluded attributes
-    for attribute_name in exclude:
-        matches = [fnmatch(x, attribute_name) for x in result.keys()]
+            if isinstance(value, dict):
+                value_dict: Dict[str, Any] = value
+                value = pick(
+                    value_dict,
+                    include,
+                    exclude,
+                    childrens_attribute_name,
+                    recursive,
+                    depth,
+                    path,
+                    path_attribute_name,
+                )
+            elif isinstance(value, list):
+                value_list: List[Dict[str, Any]] = value
 
-        if any(matches):
-            match_index = matches.index(True)
-            matched_attribute_name = item_keys[match_index]
+                value = pick_list(
+                    value_list,
+                    include,
+                    exclude,
+                    childrens_attribute_name,
+                    recursive,
+                    depth,
+                    path,
+                    path_attribute_name,
+                )
+            elif not isinstance(value, (str, float, int)):
+                raise Exception(f"{type(value)} is not supported")
 
-            del result[matched_attribute_name]
+            result[matched_attribute_name] = value
 
     # add children
     if recursive:
@@ -91,6 +171,7 @@ def pick(
                 pick(
                     x,
                     include=include,
+                    exclude=exclude,
                     childrens_attribute_name=childrens_attribute_name,
                     recursive=recursive,
                     depth=depth,
